@@ -18,6 +18,20 @@ procedurally:
 
 ---
 
+## Why
+
+Between 2015 and 2024, India recorded **50+ paper leaks across 16 states,
+affecting an estimated 1.4–1.5 crore candidates** competing for roughly
+1.2 lakh posts, and forcing 48+ re-examinations — including UP Police
+Constable 2024 (48 lakh candidates), UGC-NET 2024 (9.08 lakh), and NEET-UG
+2024, where the paper was sold for ₹30–32 lakh per candidate roughly 24 hours
+before the exam.
+
+Twenty-four hours before T-0 in this system, no readable paper exists
+anywhere: not at the authority, not at the centre, not in any custodian's
+hands. See [IMPACT.md](IMPACT.md) for the documented record, and for an
+honest account of which leak vectors this closes and which it does not.
+
 ## Quick start
 
 Requires Node 20+ and pnpm 9.
@@ -219,6 +233,7 @@ Exit codes: `0` PASS, `2` ATTENTION, `1` usage or I/O error.
 
 | Document | Contents |
 |---|---|
+| [IMPACT.md](IMPACT.md) | India's documented paper leaks, and which vectors this architecture closes — and which it does not |
 | [THREATS.md](THREATS.md) | Threat model with the test enforcing each row and residual risks |
 | [SECURITY.md](SECURITY.md) | Cryptographic design, key hierarchy, invariants, reporting |
 | [PRIVACY.md](PRIVACY.md) | What data exists where, DPIA outline, retention |
