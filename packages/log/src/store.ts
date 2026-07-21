@@ -7,6 +7,7 @@ import type {
   Checkpoint,
   CheckpointBody,
   EventType,
+  EvidenceBundle,
   LogEntry,
   LogEntryBody,
 } from "./types.js";
@@ -303,6 +304,25 @@ export class TransparencyLog {
       .all() as CheckpointRow[];
     const row = rows[0];
     return row ? rowToCheckpoint(row) : null;
+  }
+
+  /**
+   * Snapshot this log as a portable evidence bundle. The signer map carries
+   * every public key that appears in the log, keyed by actor — a verifier
+   * cross-checks these against out-of-band enrolment records rather than
+   * trusting the bundle's own claim (the tamper suite covers substitution).
+   */
+  evidence(examId: string): EvidenceBundle {
+    const entries = this.entries();
+    const signers: Record<string, string> = {};
+    for (const e of entries) signers[e.actor] = e.signerPublicKey;
+    return {
+      version: 1,
+      exam_id: examId,
+      entries,
+      checkpoints: this.checkpoints(),
+      signers,
+    };
   }
 
   close(): void {

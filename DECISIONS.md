@@ -393,3 +393,96 @@ roughly one certificate in sixteen, intermittently, which is the worst way to
 discover a fault in a system that runs once a year. Found by a full-workspace
 run rather than by the CA's own suite; now pinned by a test that issues 40
 certificates and round-trips each serial through Node's parser.
+
+## D-29 — Vendored Go fonts, embedded and subset, never system fonts
+
+**Decision.** Papers embed the Go font family (Go-Regular/Bold/Mono, BSD
+license, vendored in packages/centre/assets with its license file). System
+fonts are never consulted.
+
+**Why.** Byte-identical re-rendering (F4) is the dispute-resolution mechanism,
+and it dies the moment any input varies by host. A system font differs
+between machines, distributions and OS updates; a vendored font is part of
+the codebase and versioned with it. Noto Sans was considered and rejected:
+its current upstream distribution is a 2MB variable font, which would bloat
+every candidate PDF; the Go faces are ~150KB each, well-hinted, and their
+license permits redistribution.
+
+## D-30 — The QR carries the content hash, not the PDF hash
+
+**Decision.** The printed QR encodes `{v, examId, centreId, seat, prefix of
+paper CONTENT hash}`. The PDF-byte hash is committed separately in
+PAPER_GENERATED.
+
+**Why.** The QR is printed inside the PDF, so a QR carrying the PDF's own
+hash is circular — the hash would change the bytes it hashes. The content
+hash (canonical JSON of the assembled questions and option order) is
+computable before rendering, pins exactly what this candidate saw, and the
+log binds content hash ↔ PDF hash ↔ seat, so a photographed fragment still
+traces to a seat (T4).
+
+## D-31 — Page-chain footers over body lines
+
+**Decision.** Every page footer prints `Page n of N` and a 12-hex prefix of
+chain_n = H(chain_{n-1} ‖ page n's body lines), seeded from the content hash.
+
+**Why.** Removing, substituting or reordering a printed page must be
+detectable from the paper alone plus the log. Chaining over the laid-out
+body lines (not raw PDF bytes) keeps the chain re-derivable by the verifier
+from the same pure layout function, and keeps the footer itself out of the
+chained material so the chain is well-defined.
+
+## D-32 — Uniform assembly via rejection sampling
+
+**Decision.** The per-candidate PRNG is BLAKE2b in counter mode keyed by
+`seed = H(examId ‖ centreId ‖ tokenHash)`; integer draws use rejection
+sampling; pools are sorted by item id before any draw.
+
+**Why.** Modulo bias would make some papers statistically likelier than
+others — an adversary modelling the generator could narrow the paper space.
+Sorting pools makes assembly independent of database row order, which is an
+implementation accident and must never influence a paper (verified by a test
+that reverses storage order and gets identical output).
+
+## D-33 — "Submitted" is not "printed": IPP jobs are polled to completion
+
+**Decision.** The print path is Print-Job followed by Get-Job-Attributes
+polling until the RFC 8011 job-state reaches completed; aborted/canceled
+states and a per-printer deadline trigger failover to the next configured
+printer, and each failover is logged as PRINTER_FAILOVER evidence. Spool-dir
+is the terminal fallback.
+
+**Why.** At T-0 a job sitting in a dead printer's queue is indistinguishable
+from success unless completion is confirmed. The failover order is explicit
+configuration (primary, backup), and the fact that papers came off a backup
+printer is custody-relevant — hence a log event, not just a metric. Local
+macOS CUPS was deliberately not used for integration tests: it would require
+altering the developer's own print configuration; the CI compose runs a real
+CUPS container instead, and the unit suite drives the client against a real
+RFC 8010 wire-format responder in-process.
+
+## D-34 — Centres refuse what they cannot verify
+
+**Decision.** A centre verifies the bundle envelope hash against the
+distribution statement BEFORE storing (T3); verifies the unwrapped KEK's
+fingerprint against the bundle's committed fingerprint before holding it;
+verifies offline media signatures before unsealing (T10); and refuses to
+print PDF bytes whose hash does not match the logged paper_hash (T4). All
+four refusals carry precise error codes.
+
+**Why.** Every hand-off into the centre is an attack surface. Verifying at
+the boundary and refusing loudly converts each substitution attack into an
+immediate, attributable failure rather than a silent compromise.
+
+## D-35 — The exam-day path takes no network dependency (I-CTR-2)
+
+**Decision.** checkIn, generatePaper, printPaper, closeExam and checkpoint
+are constructed with no reference to any network client. The sync client
+(mTLS to the authority) exists only for bundle transfer and KEK pickup.
+Authority connectivity appears in NO health check.
+
+**Why.** T10: the authority being down at T-0 must not stop an exam whose
+centre already holds the KEK. Making the property structural (the code path
+cannot reach a client object) is stronger than making it behavioural. The
+autonomy test provisions over real mTLS, kills the authority process, then
+completes check-in, generation, printing and close fully offline.
