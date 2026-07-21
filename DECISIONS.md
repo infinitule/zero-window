@@ -141,3 +141,90 @@ coverage measurement.
 it against their own backends. It is fully executed — by
 `@zw/kms-vault` and `@zw/kms-pkcs11` — just not by `@zw/crypto`'s own run,
 where counting it would measure the wrong thing.
+
+## D-10 — In-tree DER/ASN.1 and CMS verification rather than a library
+
+**Decision.** `@zw/log` implements the DER encoding, RFC 3161 parsing, and
+CMS SignedData signature verification it needs (`asn1.ts`, `rfc3161.ts`,
+`cms.ts`) instead of depending on a general ASN.1 or PKI library.
+
+**Why.** The verifier is the component a hostile auditor runs to check the
+operator's claims. Every byte it parses should be readable in this repository
+without following a dependency chain whose parsing behaviour can change
+between minor versions. The required surface is small — one request type, one
+response type, one CMS profile — and is deliberately narrow: anything outside
+the RFC 3161 profile is rejected rather than tolerated. Verified against
+tokens from three independently operated public TSAs (FreeTSA, DigiCert,
+Sectigo), which exercise different signature algorithms and certificate
+layouts.
+
+**Revisit if.** Support is needed for TSAs using mechanisms outside this
+profile, at which point the narrow implementation should be extended
+deliberately rather than replaced with a permissive parser.
+
+## D-11 — Anchors verify the CMS signature; chain validation belongs to the auditor
+
+**Decision.** `parseTimeStampToken` verifies the TSA's SignerInfo signature
+over the token content by default. Certificate CHAIN validation to a trust
+anchor, and revocation, are performed by `@zw/verifier` against roots the
+deploying agency configures.
+
+**Why.** These are different questions. "Did the holder of this certificate's
+key sign our root at the asserted time?" is a cryptographic fact this package
+can settle. "Is that certificate a TSA I trust?" is policy, and hard-coding a
+trust store into the anchoring client would make the operator's opinion of
+trustworthiness part of the evidence. The split keeps the auditor's decision
+explicit. SECURITY.md §"What a TSA token proves" states the boundary.
+
+**Not checked, deliberately:** corruption confined to redundant chain
+certificates or the informational `digestAlgorithms` hint does not invalidate
+a token, because neither is covered by the signature. Tested explicitly.
+
+## D-12 — Merkle inclusion proofs do not pin tree size; checkpoints do
+
+**Decision.** `verifyInclusion` is the standard RFC 6962 algorithm, which
+does not by itself authenticate the tree size — for some (index, size) pairs
+the path shape coincides, so one proof can verify at more than one size.
+
+**Why it is safe here.** `size` is never taken from the party presenting a
+proof. It is covered by the checkpoint's Ed25519 signature and by the
+TSA-anchored root, so an operator cannot restate the size of a tree they have
+already published. This is asserted by a test so the property is documented
+and pinned rather than latent.
+
+## D-13 — Canonical JSON rejects floats and undefined instead of coercing
+
+**Decision.** The canonical encoder throws on non-integer numbers, `undefined`
+properties, bigints, and raw binary.
+
+**Why.** Every rejected case is a way two encoders could disagree about what
+bytes were signed. A float that round-trips differently, or a property
+silently dropped because it was `undefined`, would make a valid log look
+forged (or, worse, let a forged one look valid). Timestamps are integer
+milliseconds and everything else numeric is a count, so the restriction costs
+nothing. Binary must be explicitly base64/hex encoded by the caller so the
+encoding is visible in the evidence file.
+
+## D-14 — The log is append-only in the storage engine, not only in the API
+
+**Decision.** SQLite triggers `RAISE(ABORT)` on UPDATE or DELETE of `entries`,
+and on DELETE of `checkpoints`.
+
+**Why.** T6 is an operator who rewrites history; that operator has shell
+access to the database file. The hash chain already makes rewrites
+*detectable*, but making them fail at the storage layer means the honest
+operator cannot corrupt the log by accident and the dishonest one must work
+visibly harder. Anchors accumulate and are never replaced, so a later TSA
+cannot displace an earlier inconvenient timestamp.
+
+## D-15 — TSA fixtures recorded from real services; live tests are opt-in
+
+**Decision.** CI verifies real, recorded RFC 3161 tokens offline. The live
+network path runs under `ZW_TSA_MODE=live` (nightly and on demand), and
+`scripts/record-tsa-fixtures.mjs` regenerates the fixtures.
+
+**Why.** A public TSA being unreachable must never fail a build or block a
+release — the same T10 reasoning that puts a fallback on every exam-day path.
+Recording real tokens rather than synthesising them keeps the parser honest
+against three independent implementations; the fixture script refuses to write
+unless at least two TSAs responded.

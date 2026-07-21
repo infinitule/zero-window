@@ -1,0 +1,31 @@
+{
+  "name": "@zw/log",
+  "version": "1.0.0",
+  "description": "ZERO-WINDOW transparency log: hash chain, Merkle checkpoints, signatures, multi-TSA RFC 3161 anchoring, portable evidence export",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@zw/crypto": "workspace:*",
+    "better-sqlite3": "^11.7.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^20.17.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9",
+    "@zw/kms-vault": "workspace:*"
+  }
+}
