@@ -228,3 +228,83 @@ release — the same T10 reasoning that puts a fallback on every exam-day path.
 Recording real tokens rather than synthesising them keeps the parser honest
 against three independent implementations; the fixture script refuses to write
 unless at least two TSAs responded.
+
+## D-16 — ECDSA P-384 for the PKI, not Ed25519 or RSA
+
+**Decision.** All CA and leaf keys are ECDSA P-384 with SHA-384.
+
+**Why.** Ed25519 would be the better primitive on merit and is what the rest
+of the stack uses for application signatures, but TLS support for Ed25519
+certificates is still uneven across stacks and middleboxes likely to sit
+between an authority and a few hundred centres. RSA-4096 costs materially
+more per handshake on modest centre-node hardware. P-384 is universally
+supported, gives margin over P-256 for certificates that must stay valid
+across a multi-year exam cycle, and keeps handshakes cheap.
+
+**Note.** This is a transport-layer choice only. Evidence — log entries,
+checkpoints, admit tokens — is Ed25519 throughout, so no auditor needs a
+TLS stack to verify it.
+
+## D-17 — Two-tier CA with the root held offline
+
+**Decision.** A root that signs only intermediates (pathLen 1) and an online
+issuing intermediate that signs leaves (pathLen 0). `zw-ca init` prints the
+path of the root key and instructs the operator to move it to offline media.
+
+**Why.** Compromise of the online issuing key is then recoverable by rotating
+one intermediate, rather than re-provisioning every centre in the country.
+`rotate-intermediate` deliberately does NOT revoke the previous intermediate:
+certificates it signed stay valid until they expire, so a routine rotation
+cannot accidentally strand a fleet. Revoking it is a separate, explicit act
+for incident response.
+
+## D-18 — One EKU per role, and a hardware binding on client certificates
+
+**Decision.** Server certificates carry serverAuth only; client certificates
+carry clientAuth only (I-CA-1). Centre and custodian certificates must carry
+a hardware identifier, bound both in the subject (`OU=hw:<id>`) and as a URI
+SAN (I-CA-2); issuance refuses without one.
+
+**Why.** A stolen centre client certificate must not be usable to stand up a
+server impersonating the authority, and vice versa — the split EKU makes that
+structural rather than a matter of configuration. The hardware binding means
+a copied key pair presenting from a different machine is detectable at
+connection time, which is the realistic form of T7 inside a custody chain.
+
+## D-19 — Revocation fails closed: a missing or stale CRL is an error
+
+**Decision.** `RevocationList.load` throws when the CRL file is absent, and
+`assertFresh` throws once `nextUpdate` has passed (I-CA-3). CRLs default to a
+24-hour validity window.
+
+**Why.** Revocation that can be disabled by deleting a file, or by simply not
+republishing, is not revocation. Making staleness a hard failure means an
+operator who stops publishing CRLs takes the fleet down loudly instead of
+silently disabling the check — the failure mode you want when the alternative
+is accepting a compromised centre certificate at T-0.
+
+## D-20 — CRLs are published with the RFC 7468 label
+
+**Decision.** `generateCrl` rewrites the PEM label from `BEGIN CRL` to
+`BEGIN X509 CRL`; the parser accepts both.
+
+**Why.** @peculiar/x509 emits the bare label, which OpenSSL and other standard
+tooling refuse to parse — verified by running `openssl crl` against a
+published file, which failed before this fix and is now pinned by a test. An
+operator following the incident-response runbook must be able to inspect a
+published CRL with standard tools.
+
+## D-21 — TLS 1.3 only, and "connected" is not "authenticated"
+
+**Decision.** Both server and client options set `minVersion: TLSv1.3`.
+Services treat their own connection handler firing — not the client's connect
+callback — as the authentication signal.
+
+**Why.** The deployment is entirely first-party, so there is no legacy peer to
+accommodate and no reason to keep TLS 1.2 cipher negotiation in the attack
+surface. The second half matters more: in TLS 1.3 the client's connect
+callback fires once it has verified the SERVER, before the server has
+validated the client certificate, so a rejected client observes a successful
+connect and learns it was refused only on a later read. A service that treated
+connect as authentication would be wrong in exactly the case that matters.
+Asserted by handshake tests that count server-side accepts.
