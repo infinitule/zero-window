@@ -486,3 +486,56 @@ centre already holds the KEK. Making the property structural (the code path
 cannot reach a client object) is stronger than making it behavioural. The
 autonomy test provisions over real mTLS, kills the authority process, then
 completes check-in, generation, printing and close fully offline.
+
+## D-36 — The verifier shares the read path and the generator, nothing else
+
+**Decision.** `@zw/verifier` depends on `@zw/log` (chain/checkpoint/anchor
+verification), `@zw/authority` (canonical hashing of bundle content) and
+`@zw/centre` (paper assembly + rendering). It does not depend on any store,
+service, key provider or network client.
+
+**Why.** Paper re-derivation is only meaningful if the auditor runs the SAME
+generator the centre ran — a reimplementation would prove that two programs
+agree, not that the printed paper is what the log says. Everything else is
+excluded so that an auditor's install cannot accidentally acquire the ability
+to write evidence, and so the audit reads only files it was handed.
+
+## D-37 — Absent inputs produce NOT_EVALUATED, never PASS
+
+**Decision.** Threat rows the auditor cannot test with the inputs supplied
+are reported NOT_EVALUATED with the reason. Without anchor backends, T5 is
+NOT_EVALUATED. Without the post-exam paper disclosure, T4 is NOT_EVALUATED.
+Without an out-of-band signer list, T6 still evaluates but the report states
+that signer trust rests on the bundles themselves (I-VER-1).
+
+**Why.** An audit that silently reports PASS for a property it never tested
+is worse than no audit, because it launders absence of evidence into evidence
+of absence. Making the gap explicit is what lets a reader tell a clean exam
+from an under-specified audit.
+
+## D-38 — T1's residual is stated in the report, not hidden
+
+**Decision.** T1 (authority insider exfiltrates plaintext pre-T0) resolves on
+what the evidence can actually show — distinct per-bundle KEK commitments and
+measured plaintext-KEK lifetimes — and the report prints, in the row itself,
+that memory-handling guarantees are enforced by the codebase's acceptance
+tests and cannot be re-run by an auditor against a past run.
+
+**Why.** No log can prove that a process zeroized memory. Claiming T1 PASS
+without that caveat would overstate what an external auditor can know. The
+acceptance criterion "every threat row: enforced-by-test or explicitly
+documented residual risk" is met by stating the boundary where the log's
+authority ends.
+
+## D-39 — The auditor signs with an ephemeral key by default
+
+**Decision.** `signReport` generates a fresh Ed25519 key per report, signs
+the canonical body, returns the public key alongside, and zeroizes the
+secret. The report is tamper-evident in transit; it is not an identity claim.
+
+**Why.** A ZERO-WINDOW install has no business minting durable auditor
+identities — an auditing body's signing key belongs to that body, managed by
+its own PKI, and pretending otherwise would invite an operator to generate
+"auditor" keys. v1.1 adds `--signing-key` to sign with an auditor-supplied
+key (ROADMAP). Meanwhile the canonical-JSON signature still catches any edit
+to a verdict or its evidence, which is what the report needs to survive.

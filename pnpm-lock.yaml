@@ -220,6 +220,34 @@ importers:
         specifier: ^2.1.9
         version: 2.1.9(@types/node@20.19.43)
 
+  packages/verifier:
+    dependencies:
+      '@zw/authority':
+        specifier: workspace:*
+        version: link:../authority
+      '@zw/centre':
+        specifier: workspace:*
+        version: link:../centre
+      '@zw/crypto':
+        specifier: workspace:*
+        version: link:../crypto
+      '@zw/log':
+        specifier: workspace:*
+        version: link:../log
+    devDependencies:
+      '@types/node':
+        specifier: ^20.17.0
+        version: 20.19.43
+      '@zw/kms-vault':
+        specifier: workspace:*
+        version: link:../kms-vault
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@20.19.43)
+
 packages:
 
   '@ampproject/remapping@2.3.0':

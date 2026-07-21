@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    // @peculiar/x509 is written against the WebCrypto DOM types (Crypto,
+    // CryptoKey, EcKeyGenParams). Node 20's webcrypto implements exactly that
+    // interface, so the DOM lib is included here for its type declarations
+    // only — no DOM API is used at runtime in this package.
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["src"]
+}

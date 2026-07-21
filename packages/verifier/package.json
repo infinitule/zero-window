@@ -1,0 +1,35 @@
+{
+  "name": "@zw/verifier",
+  "version": "1.0.0",
+  "description": "ZERO-WINDOW independent auditor: verifies the evidence chain, checkpoints, TSA anchors and paper determinism with zero trust in the operator",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "bin": {
+    "zw-verify": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && chmod +x dist/cli.js",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@zw/authority": "workspace:*",
+    "@zw/centre": "workspace:*",
+    "@zw/crypto": "workspace:*",
+    "@zw/log": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "@zw/kms-vault": "workspace:*",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}
