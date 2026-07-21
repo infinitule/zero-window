@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { x509 } from "./x509-setup.js";
 import { randomBytes } from "@zw/crypto";
+import { normalizeSerial } from "./mtls.js";
 import {
   REVOCATION_REASON_CODES,
   type CertRole,
@@ -404,7 +405,12 @@ export class CertificateAuthority {
   // ------------------------------------------------------------------
 
   get(serial: string): CertificateRecord {
-    const record = this.state.certificates.find((c) => c.serial === serial);
+    // Serials arrive from three sources with different conventions: our own
+    // records (lowercase, padded), Node's TLS layer (uppercase), and X.509
+    // encoders (leading zeros dropped). Compare normalized so a certificate
+    // is found however its serial was rendered.
+    const wanted = normalizeSerial(serial);
+    const record = this.state.certificates.find((c) => normalizeSerial(c.serial) === wanted);
     if (!record) throw new CaError(`no certificate with serial ${serial}`, "UNKNOWN_CERT");
     return record;
   }
@@ -544,9 +550,17 @@ export function toStandardCrlPem(pem: string): string {
 }
 
 function newSerial(): string {
-  // 16 random bytes with the top bit cleared so the DER INTEGER is positive.
+  // 16 random bytes forming a positive DER INTEGER with no leading zero.
+  //
+  // The top bit is cleared so the INTEGER is positive, and the top nibble is
+  // forced non-zero. Without the latter, roughly one serial in sixteen begins
+  // with a zero nibble, and X.509 encoders drop leading zeros when rendering
+  // the serial back to hex — so the string recorded at issuance would not
+  // match the string parsed from the issued certificate, and enrolment
+  // lookups for that certificate would fail. Intermittent by construction,
+  // which is exactly the kind of fault that surfaces on exam day.
   const b = randomBytes(16);
-  b[0] = (b[0] ?? 0) & 0x7f;
+  b[0] = ((b[0] ?? 0) & 0x7f) | 0x10;
   return b.toString("hex");
 }
 

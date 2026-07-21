@@ -1,0 +1,25 @@
+{
+  "name": "@zw/ops",
+  "version": "1.0.0",
+  "description": "ZERO-WINDOW shared operational primitives: structured logging, Prometheus metrics, health checks, graceful shutdown",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}

@@ -308,3 +308,88 @@ validated the client certificate, so a rejected client observes a successful
 connect and learns it was refused only on a later read. A service that treated
 connect as authentication would be wrong in exactly the case that matters.
 Asserted by handshake tests that count server-side accepts.
+
+## D-22 — Per-bundle KEKs: the answer key is a separate cryptographic object
+
+**Decision.** Provisioning builds two bundles per exam — paper and answers —
+each encrypted under its own freshly generated KEK, each split to the same
+custodian set, each with its own release schedule.
+
+**Why.** The answer key must stay sealed at T-0 when the paper KEK is
+released, and become available only after the exam closes. Sharing one KEK
+would make that a matter of access control on the same secret; separate KEKs
+make it structural. Releasing the paper cannot release the answers, and the
+test asserts the answers bundle has no schedule and refuses release at T-0.
+
+## D-23 — The release schedule is signed, and verified on every attempt
+
+**Decision.** `scheduleRelease` signs `{v, examId, bundleId, releaseAt}` with
+the authority key. `performRelease` re-verifies that signature before
+comparing the clock (I-REL-1).
+
+**Why.** Without this, the T-0 check is only as strong as write access to a
+SQLite row — an operator could move T-0 earlier and release legitimately. With
+it, editing the row invalidates the signature and the release refuses
+outright rather than proceeding early. Tested by writing a modified schedule
+directly to the store and asserting `SCHEDULE_TAMPERED`.
+
+## D-24 — Blowing the KEK-lifetime budget fails the release
+
+**Decision.** If the measured plaintext-KEK lifetime exceeds 500ms, the
+release is failed with `BUDGET_EXCEEDED` even though the wrapping succeeded.
+The KEK is zeroized either way.
+
+**Why.** The budget exists to bound the window in which a plaintext KEK is
+resident. A run that overshoots it indicates the host is not fit for release
+duty — paging, CPU contention, a debugger attached. Treating that as a
+warning would normalize exactly the condition the budget is meant to detect.
+Failing means an operator investigates before T-0 rather than after a leak.
+The alternative — release anyway and alert — was rejected because the release
+can simply be retried on a healthy host, so the cost of failing closed is low.
+
+## D-25 — Early release attempts are logged before they are refused
+
+**Decision.** `EARLY_RELEASE_ATTEMPT` is appended to the transparency log,
+and a counter incremented, before the error is thrown (I-REL-3). Custodian
+approvals are likewise logged before reconstruction is attempted.
+
+**Why.** A custodian attempting to release early is the single most valuable
+signal this system can produce, and it must survive the refusal. Logging
+after the throw would lose it; logging approvals only on success would erase
+the evidence of who authorised a release that then failed.
+
+## D-26 — Registration IDs are salted per exam before hashing
+
+**Decision.** Admit tokens carry `BLAKE2b(salt ‖ registrationId)` under a
+per-exam salt (I-ADMIT-1). The salt is written alongside the roster, and the
+CLI tells the operator to store it with the registration system rather than
+with the exam evidence.
+
+**Why.** T8 asks that the ledger not become a surveillance dataset. An
+unsalted hash of a structured national ID is trivially brute-forced, and a
+single global salt would let anyone holding two exams' evidence link the same
+candidate across them. A per-exam salt makes tokens unlinkable across exams
+while keeping them deterministic within one, which is what the centre needs.
+
+## D-27 — Durations are logged as integer microseconds
+
+**Decision.** The KEK lifetime is recorded as `kek_lifetime_us`, an integer,
+not as fractional milliseconds.
+
+**Why.** The log's canonical JSON admits integers only, so that an evidence
+bundle re-encodes byte-identically on any platform — a float would not, and
+the verifier's byte-comparison would fail on a different machine. Recording
+microseconds keeps full resolution without floats.
+
+## D-28 — Certificate serials never begin with a zero nibble
+
+**Decision.** `newSerial` forces the top nibble non-zero as well as clearing
+the sign bit, and every serial comparison normalizes case and leading zeros.
+
+**Why.** X.509 encoders drop leading zeros when rendering a serial to hex, so
+a serial beginning `0x0…` was recorded one way at issuance and reported
+another way by Node's TLS stack — the enrolment lookup then failed. This hit
+roughly one certificate in sixteen, intermittently, which is the worst way to
+discover a fault in a system that runs once a year. Found by a full-workspace
+run rather than by the CA's own suite; now pinned by a test that issues 40
+certificates and round-trips each serial through Node's parser.

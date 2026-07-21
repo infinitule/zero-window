@@ -260,6 +260,6 @@ export function extractHardwareId(cert: x509.X509Certificate): string | undefine
  * library's lowercase hex, Node's uppercase hex, and DER integers that may
  * carry a leading zero pad. Every comparison goes through this.
  */
-function normalizeSerial(serial: string): string {
+export function normalizeSerial(serial: string): string {
   return serial.replace(/^0+/, "").toLowerCase();
 }

@@ -267,6 +267,35 @@ describe("revocation and CRLs", () => {
     expect(parsed.entries[0]!.reason).toBe(1); // keyCompromise
   });
 
+  it("issues serials that survive the X.509 hex round trip", async () => {
+    // REGRESSION: serials whose first nibble is zero are rendered without it
+    // by X.509 encoders, so the recorded serial and the parsed serial differ
+    // and enrolment lookups fail. This hit roughly one certificate in
+    // sixteen — intermittently, which is the worst way to find out.
+    const ca = await newCa();
+    for (let i = 0; i < 40; i++) {
+      const issued = await ca.issue({ role: "auditor-client", commonName: `c${i}` });
+      // Node's TLS stack is what actually reports peer serials at runtime;
+      // the leaf is the first certificate in the chain.
+      const parsed = new X509Certificate(issued.chainPem);
+
+      expect(issued.record.serial).not.toMatch(/^0/);
+      expect(parsed.serialNumber.toLowerCase()).toBe(issued.record.serial.toLowerCase());
+      // And the record is findable by the serial as the certificate reports it.
+      expect(ca.get(parsed.serialNumber).commonName).toBe(`c${i}`);
+    }
+  });
+
+  it("finds a certificate however its serial is rendered", async () => {
+    const ca = await newCa();
+    const issued = await ca.issue({ role: "auditor-client", commonName: "render" });
+    const s = issued.record.serial;
+    for (const variant of [s, s.toUpperCase(), `00${s}`, `0000${s.toUpperCase()}`]) {
+      expect(ca.get(variant).commonName).toBe("render");
+    }
+    expect(() => ca.get("deadbeef")).toThrow(/no certificate with serial/);
+  });
+
   it("publishes CRLs with the RFC 7468 label so external tooling can read them", async () => {
     const ca = await newCa();
     const issued = await ca.issue({ role: "auditor-client", commonName: "a" });

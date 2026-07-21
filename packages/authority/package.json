@@ -1,0 +1,38 @@
+{
+  "name": "@zw/authority",
+  "version": "1.0.0",
+  "description": "ZERO-WINDOW authority: vault ingestion, bundle build, custodian ceremony, admit tokens, threshold release",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "bin": {
+    "zw-authority": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && chmod +x dist/cli.js",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@zw/ca": "workspace:*",
+    "@zw/crypto": "workspace:*",
+    "@zw/kms-vault": "workspace:*",
+    "@zw/log": "workspace:*",
+    "@zw/ops": "workspace:*",
+    "better-sqlite3": "^11.7.0",
+    "fastify": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^20.17.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}
