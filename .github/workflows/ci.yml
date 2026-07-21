@@ -122,14 +122,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends cups cups-pdf cups-filters
-          sudo mkdir -p /var/spool/cups-pdf-out
-          sudo chmod 1777 /var/spool/cups-pdf-out
-          # Write finished jobs somewhere predictable instead of an anonymous
-          # user home, so the test can inspect what actually printed.
+          # Keep output inside /var/spool/cups-pdf: cups-pdf is confined by
+          # AppArmor on Ubuntu and cannot write to an arbitrary path. UserUMask
+          # 0000 makes the finished PDFs world-readable so the unprivileged
+          # test process can inspect them.
           sudo tee /etc/cups/cups-pdf.conf >/dev/null <<'CONF'
-          Out /var/spool/cups-pdf-out
-          AnonDirName /var/spool/cups-pdf-out
+          Out /var/spool/cups-pdf
+          AnonDirName /var/spool/cups-pdf/ANONYMOUS
           AnonUser nobody
+          UserUMask 0000
           Cleanup 0
           CONF
           sudo systemctl restart cups
@@ -155,6 +156,19 @@ jobs:
           # downstream error: no queue means the job below proves nothing.
           lpstat -p zw-test || { echo "queue zw-test was not created"; exit 1; }
 
+          # cups-pdf creates its per-user output directories on first print,
+          # mode 0700. Warm it up once so those directories exist, then open
+          # them for reading — otherwise the test can print successfully and
+          # still be unable to see what it produced.
+          echo "warmup" | lp -d zw-test
+          for _ in $(seq 1 40); do
+            [ -n "$(sudo find /var/spool/cups-pdf -name '*.pdf' 2>/dev/null)" ] && break
+            sleep 0.5
+          done
+          sudo chmod -R a+rX /var/spool/cups-pdf
+          sudo find /var/spool/cups-pdf -name '*.pdf' -delete
+          echo "cups-pdf output tree:"; ls -la /var/spool/cups-pdf
+
       # No version pin: pnpm/action-setup reads packageManager from
       # package.json. Specifying both is an error when they disagree, which
       # is exactly how this broke before.
@@ -169,7 +183,7 @@ jobs:
       - name: Print real papers through CUPS
         env:
           ZW_CUPS_URL: http://127.0.0.1:631/printers/zw-test
-          ZW_CUPS_OUTPUT_DIR: /var/spool/cups-pdf-out
+          ZW_CUPS_OUTPUT_DIR: /var/spool/cups-pdf
           # Must RUN, not skip: a missing server fails the job.
           ZW_REQUIRE_CUPS: "1"
         run: pnpm --filter @zw/centre exec vitest run test/cups.test.ts

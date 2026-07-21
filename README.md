@@ -29,20 +29,25 @@ in India between 2015 and 2024 enough of them did to affect an estimated
 re-examinations.
 
 ```mermaid
-timeline
-    title The custody window, before and after
-    section Conventional custody
-        Paper written : readable
-        Central printing : readable by press staff
-        Transport : readable in transit
-        Strongroom, days : readable by anyone with keys
-        T-0 exam starts : readable
-    section ZERO-WINDOW
-        Paper written : readable inside the vault only
-        Encrypted at ingestion : ciphertext from here on
-        Distributed : ciphertext at every centre
-        Waiting, days : NO plaintext exists anywhere
-        T-0 : 3 of 5 custodians unlock, papers print in-hall
+flowchart TB
+    subgraph conv["CONVENTIONAL CUSTODY — a readable copy exists at every step"]
+        direction LR
+        C1["Paper<br/>written"] --> C2["Central<br/>printing"] --> C3["Transport"] --> C4["Strongroom<br/><i>days</i>"] --> C5["T-0<br/>exam starts"]
+    end
+
+    subgraph zw["ZERO-WINDOW — no readable copy exists anywhere until T-0"]
+        direction LR
+        Z1["Paper<br/>written"] --> Z2["Encrypted<br/>at ingestion"] --> Z3["Distributed<br/>as ciphertext"] --> Z4["Waiting<br/><i>days</i>"] --> Z5["T-0 · 3-of-5<br/>unlock &amp; print"]
+    end
+
+    conv ~~~ zw
+
+    classDef leak fill:#ffe0e0,stroke:#c92a2a,stroke-width:2px,color:#000
+    classDef safe fill:#e6f7ea,stroke:#2b8a3e,stroke-width:2px,color:#000
+    classDef vault fill:#fff9db,stroke:#e67700,stroke-width:2px,color:#000
+    class C1,C2,C3,C4,C5 leak
+    class Z2,Z3,Z4,Z5 safe
+    class Z1 vault
 ```
 
 Twenty-four hours before T-0 — the point at which the NEET-UG 2024 paper was
