@@ -598,3 +598,38 @@ documents that the backup should be on a different circuit and switch.
 killed the first. A backup on the same power strip is decoration. This is a
 deployment property the code cannot enforce, so it is stated where the
 operator configures it.
+
+## D-45 — The pilot is in-process; the compose topology is complementary
+
+**Decision.** `pnpm pilot` runs the acceptance rehearsal in one process
+against real components — real CA, real TLS 1.3 sockets, real IPP over HTTP,
+real public TSAs, real key providers. `deploy/pilot/docker-compose.yml`
+additionally exercises real CUPS servers and the container images, and is run
+where Docker is available.
+
+**Why.** The acceptance criteria are about the custody chain, and every
+element of it is genuinely exercised in-process: nothing is mocked, stubbed
+or simulated. Making Docker a hard prerequisite for `pnpm pilot` would mean
+the primary acceptance path could not run on a developer machine without a
+container runtime, which is where it needs to run most often. CUPS
+specifically is covered by the compose topology because it is a real print
+server and worth testing against, but the IPP client is already driven
+against genuine RFC 8010 wire format in the unit suite.
+
+**Stated plainly:** the pilot in this repository was verified on a host
+without Docker. The compose topology's YAML and Dockerfiles are written and
+syntax-checked but have not been executed here; an agency bringing up the
+containerised pilot should expect to iterate on image build details.
+
+## D-46 — Documentation states residual risk in the same place as the guarantee
+
+**Decision.** THREATS.md gives every row a "Residual risk" paragraph;
+SECURITY.md has a "What this system does not defend against" section;
+INTEGRATIONS.md names exactly what an agency must obtain that this project
+cannot; the audit report itself prints T1's boundary in the row.
+
+**Why.** The acceptance criterion is "every threat row: enforced-by-test or
+explicitly documented residual risk. No silent gaps." A security document
+that claims completeness invites the reader to stop thinking. Putting the
+limit next to the claim means an operator reading why they are safe also
+reads where they are not.
