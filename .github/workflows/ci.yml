@@ -48,9 +48,10 @@ jobs:
           echo "ZW_SOFTHSM2_UTIL=$(command -v softhsm2-util)" >> "$GITHUB_ENV"
           softhsm2-util --version
 
+      # No version pin: pnpm/action-setup reads packageManager from
+      # package.json. Specifying both is an error when they disagree, which
+      # is exactly how this broke before.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.9
 
       - uses: actions/setup-node@v4
         with:
@@ -78,9 +79,10 @@ jobs:
           MODULE=$(find /usr/lib -name 'libsofthsm2.so' 2>/dev/null | head -1)
           echo "ZW_PKCS11_MODULE=$MODULE" >> "$GITHUB_ENV"
           echo "ZW_SOFTHSM2_UTIL=$(command -v softhsm2-util)" >> "$GITHUB_ENV"
+      # No version pin: pnpm/action-setup reads packageManager from
+      # package.json. Specifying both is an error when they disagree, which
+      # is exactly how this broke before.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.9
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -97,9 +99,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      # No version pin: pnpm/action-setup reads packageManager from
+      # package.json. Specifying both is an error when they disagree, which
+      # is exactly how this broke before.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.9
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -142,9 +145,10 @@ jobs:
           sudo cupsaccept zw-test
           lpstat -p zw-test
 
+      # No version pin: pnpm/action-setup reads packageManager from
+      # package.json. Specifying both is an error when they disagree, which
+      # is exactly how this broke before.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.9
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -204,9 +208,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      # No version pin: pnpm/action-setup reads packageManager from
+      # package.json. Specifying both is an error when they disagree, which
+      # is exactly how this broke before.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.9
       - uses: actions/setup-node@v4
         with:
           node-version: 20

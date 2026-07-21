@@ -1,4 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { splitBank } from "@zw/authority";
 import { domainHash } from "@zw/crypto";
@@ -87,16 +88,21 @@ describe.skipIf(!cupsUrl)("IPP printing against real CUPS", () => {
     const rendered = await renderOne("C-002");
     await svc.print(rendered.pdf, "ZW-CUPS-C-002");
 
-    // cups-pdf writes asynchronously after the job reaches completed.
+    // cups-pdf writes asynchronously after the job reaches completed, and
+    // places output in a per-user subdirectory rather than flat in Out —
+    // so search recursively rather than assuming the layout.
     let produced: string[] = [];
     for (let i = 0; i < 40; i++) {
-      produced = (await readdir(outputDir)).filter((f) => f.endsWith(".pdf"));
+      const entries = await readdir(outputDir, { recursive: true, withFileTypes: true });
+      produced = entries
+        .filter((e) => e.isFile() && e.name.endsWith(".pdf"))
+        .map((e) => join(e.parentPath ?? outputDir, e.name));
       if (produced.length > 0) break;
       await new Promise((r) => setTimeout(r, 500));
     }
-    expect(produced.length, `no PDF appeared in ${outputDir}`).toBeGreaterThan(0);
+    expect(produced.length, `no PDF appeared anywhere under ${outputDir}`).toBeGreaterThan(0);
 
-    const bytes = await readFile(`${outputDir}/${produced[produced.length - 1]!}`);
+    const bytes = await readFile(produced[produced.length - 1]!);
     expect(bytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");
     // CUPS re-writes the PDF through its filter chain, so the bytes differ
     // from ours by design — page count is the meaningful invariant to check

@@ -16,7 +16,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
-RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
+# The corepack bundled with the Node image ships signing keys that have since
+# rotated, so `corepack prepare` fails signature verification against the
+# current npm registry ("Cannot find matching keyid"). Updating corepack first
+# picks up the current keys. Pinned so the build stays reproducible.
+RUN npm install --global corepack@0.34.0 \
+ && corepack enable \
+ && corepack prepare pnpm@9.15.9 --activate
 
 WORKDIR /src
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.base.json vitest.shared.ts ./

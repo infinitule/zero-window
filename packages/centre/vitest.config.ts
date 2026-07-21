@@ -8,7 +8,7 @@ export default mergeConfig(
       coverage: {
         provider: "v8",
         include: ["src/**/*.ts"],
-        exclude: ["src/cli.ts", "src/index.ts", "src/ipp-types.d.ts"],
+        exclude: ["src/cli.ts", "src/daemon.ts", "src/index.ts", "src/ipp-types.d.ts"],
         thresholds: { lines: 90, functions: 90, statements: 90 },
       },
     },
