@@ -1,0 +1,28 @@
+{
+  "name": "@zw/kms-pkcs11",
+  "version": "1.0.0",
+  "description": "ZERO-WINDOW key provider backed by PKCS#11 (SoftHSM2 in CI; YubiHSM 2 / Thales Luna / AWS CloudHSM in production)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@zw/crypto": "workspace:*",
+    "pkcs11js": "^2.1.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}

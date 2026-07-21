@@ -1,0 +1,3 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Shamir split/combine > KAT: deterministic entropy produces a stable, reconstructable share set 1`] = `"0e4421664048c9c2c0f86968d39e477897a9ed3166baab3d9c8db4e0b48c81f9"`;

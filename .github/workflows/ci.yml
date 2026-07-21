@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  # Anchoring against live public TSAs is not done on every CI run; the log
+  # tamper suite uses recorded RFC 3161 fixtures. The nightly job below runs
+  # the live-TSA tests.
+  ZW_TSA_MODE: fixtures
+
+jobs:
+  build-and-test:
+    name: build + unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SoftHSM2 (real PKCS#11 provider)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y softhsm2 opensc
+          softhsm2-util --version
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Unit and property tests
+        # SoftHSM2 is installed above, so the PKCS#11 suite must RUN, not skip.
+        env:
+          ZW_REQUIRE_PKCS11: "1"
+          ZW_PKCS11_MODULE: /usr/lib/softhsm/libsofthsm2.so
+        run: pnpm test
+
+  coverage:
+    name: coverage gate (crypto, log, release, generation)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SoftHSM2
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y softhsm2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Enforce >=90% line coverage on critical paths
+        env:
+          ZW_REQUIRE_PKCS11: "1"
+          ZW_PKCS11_MODULE: /usr/lib/softhsm/libsofthsm2.so
+        run: pnpm coverage
