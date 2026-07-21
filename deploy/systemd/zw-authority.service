@@ -18,7 +18,7 @@ Environment=ZW_STATE_DIR=/var/lib/zero-window/authority
 Environment=ZW_LOG_LEVEL=info
 ExecStartPre=/bin/sh -c 'test -s "${CREDENTIALS_DIRECTORY}/zw-vault" || { echo "vault credential missing"; exit 1; }'
 ExecStart=/bin/sh -c 'ZW_VAULT_PASSPHRASE="$(cat "${CREDENTIALS_DIRECTORY}/zw-vault")" \
-  exec /usr/bin/node /opt/zero-window/authority/dist/daemon.js --dir "${ZW_STATE_DIR}"'
+  exec /usr/bin/node /opt/zero-window/packages/authority/dist/daemon.js --dir "${ZW_STATE_DIR}"'
 
 # Graceful shutdown: the service drains in-flight requests and closes the log
 # cleanly. 20s is comfortably above the 15s internal shutdown deadline.

@@ -11,16 +11,16 @@ shift 2>/dev/null || true
 
 case "$SERVICE" in
   authority)
-    exec node /opt/zero-window/authority/dist/cli.js "$@"
+    exec node /opt/zero-window/packages/authority/dist/cli.js "$@"
     ;;
   centre)
-    exec node /opt/zero-window/centre/dist/cli.js "$@"
+    exec node /opt/zero-window/packages/centre/dist/cli.js "$@"
     ;;
   verify)
-    exec node /opt/zero-window/verifier/dist/cli.js "$@"
+    exec node /opt/zero-window/packages/verifier/dist/cli.js "$@"
     ;;
   ca)
-    exec node /opt/zero-window/ca/dist/cli.js "$@"
+    exec node /opt/zero-window/packages/ca/dist/cli.js "$@"
     ;;
   help|--help|-h)
     cat <<'USAGE'

@@ -139,11 +139,21 @@ jobs:
             sleep 0.5
           done
           lpstat -r
-          sudo lpadmin -p zw-test -E -v cups-pdf:/ -m everywhere \
-            || sudo lpadmin -p zw-test -E -v cups-pdf:/ -m drv:///cupsfilters.drv/pwgrast.ppd
+          # -m everywhere drives IPP Everywhere and needs a real network
+          # device; cups-pdf is a local backend and needs its own PPD. Find it
+          # rather than guessing a path that differs across releases.
+          PPD=$(find /usr/share/ppd /usr/share/cups/model -name 'CUPS-PDF*.ppd*' 2>/dev/null | head -1)
+          echo "cups-pdf PPD: ${PPD:-<none found>}"
+          if [ -n "$PPD" ]; then
+            sudo lpadmin -p zw-test -E -v cups-pdf:/ -P "$PPD"
+          else
+            sudo lpadmin -p zw-test -E -v cups-pdf:/ -m drv:///sample.drv/generic.ppd
+          fi
           sudo cupsenable zw-test
           sudo cupsaccept zw-test
-          lpstat -p zw-test
+          # Fail loudly here rather than letting the test report a confusing
+          # downstream error: no queue means the job below proves nothing.
+          lpstat -p zw-test || { echo "queue zw-test was not created"; exit 1; }
 
       # No version pin: pnpm/action-setup reads packageManager from
       # package.json. Specifying both is an error when they disagree, which

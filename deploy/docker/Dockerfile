@@ -29,11 +29,12 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.base.json vitest.s
 COPY packages ./packages
 RUN pnpm install --frozen-lockfile --prefer-offline
 RUN pnpm build
-# Strip dev dependencies from the tree that ships.
-RUN pnpm -r --prod deploy --legacy /out/authority --filter @zw/authority \
- && pnpm -r --prod deploy --legacy /out/centre    --filter @zw/centre \
- && pnpm -r --prod deploy --legacy /out/verifier  --filter @zw/verifier \
- && pnpm -r --prod deploy --legacy /out/ca        --filter @zw/ca
+# Drop dev dependencies from the tree that ships. `pnpm deploy` is not used
+# here: in a workspace it requires inject-workspace-packages, and its
+# --legacy escape hatch was removed in pnpm 9. Pruning the built workspace in
+# place is simpler and keeps the layout identical to a source checkout, which
+# matters because paper rendering must be byte-reproducible across hosts.
+RUN pnpm -r exec rm -rf src test && pnpm prune --prod
 
 FROM node:20.18.1-bookworm-slim AS runtime
 
@@ -51,7 +52,7 @@ RUN groupadd --system --gid 10001 zerowindow \
  && mkdir -p /var/lib/zero-window \
  && chown -R zerowindow:zerowindow /var/lib/zero-window
 
-COPY --from=build /out /opt/zero-window
+COPY --from=build /src /opt/zero-window
 COPY deploy/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 

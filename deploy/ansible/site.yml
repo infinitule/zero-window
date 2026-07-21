@@ -241,7 +241,7 @@
     - name: Report the centre's box public key for enrolment
       ansible.builtin.command:
         cmd: >-
-          node /opt/zero-window/centre/dist/cli.js identity
+          node /opt/zero-window/packages/centre/dist/cli.js identity
           --dir /var/lib/zero-window/centre
       become_user: zerowindow
       register: zw_centre_identity
