@@ -29,5 +29,6 @@
     "@zw/log": "workspace:*",
     "@zw/verifier": "workspace:*",
     "ipp": "^2.0.1"
-  }
+  },
+  "license": "Apache-2.0"
 }

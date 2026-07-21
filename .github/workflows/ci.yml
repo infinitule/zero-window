@@ -4,42 +4,66 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Weekly, Mondays 04:00 UTC — exercises the live public TSAs.
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+# A superseded run on a branch is cancelled; main is never cancelled so the
+# record of what passed on main stays complete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
 
 env:
   # Anchoring against live public TSAs is not done on every CI run; the log
-  # tamper suite uses recorded RFC 3161 fixtures. The nightly job below runs
-  # the live-TSA tests.
+  # tamper suite uses recorded RFC 3161 fixtures. The tsa-live job below runs
+  # the network path on a schedule, so an outage at freetsa.org cannot redden
+  # an unrelated pull request.
   ZW_TSA_MODE: fixtures
 
 jobs:
   build-and-test:
-    name: build + unit tests
+    name: build + tests (node ${{ matrix.node }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "22"]
     steps:
       - uses: actions/checkout@v4
 
       - name: Install SoftHSM2 (real PKCS#11 provider)
         run: |
           sudo apt-get update
-          sudo apt-get install -y softhsm2 opensc
+          sudo apt-get install -y --no-install-recommends softhsm2 opensc
+          # The module path differs across distributions; resolve it once
+          # rather than letting the tests guess from a hardcoded list.
+          MODULE=$(find /usr/lib -name 'libsofthsm2.so' 2>/dev/null | head -1)
+          test -n "$MODULE" || { echo "libsofthsm2.so not found"; exit 1; }
+          echo "ZW_PKCS11_MODULE=$MODULE" >> "$GITHUB_ENV"
+          echo "ZW_SOFTHSM2_UTIL=$(command -v softhsm2-util)" >> "$GITHUB_ENV"
           softhsm2-util --version
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 9.15.9
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ matrix.node }}
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - name: Unit and property tests
+
+      - name: Unit, property, integration and drill tests
         # SoftHSM2 is installed above, so the PKCS#11 suite must RUN, not skip.
         env:
           ZW_REQUIRE_PKCS11: "1"
-          ZW_PKCS11_MODULE: /usr/lib/softhsm/libsofthsm2.so
         run: pnpm test
 
   coverage:
@@ -50,10 +74,13 @@ jobs:
       - name: Install SoftHSM2
         run: |
           sudo apt-get update
-          sudo apt-get install -y softhsm2
+          sudo apt-get install -y --no-install-recommends softhsm2
+          MODULE=$(find /usr/lib -name 'libsofthsm2.so' 2>/dev/null | head -1)
+          echo "ZW_PKCS11_MODULE=$MODULE" >> "$GITHUB_ENV"
+          echo "ZW_SOFTHSM2_UTIL=$(command -v softhsm2-util)" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 9.15.9
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -63,5 +90,134 @@ jobs:
       - name: Enforce >=90% line coverage on critical paths
         env:
           ZW_REQUIRE_PKCS11: "1"
-          ZW_PKCS11_MODULE: /usr/lib/softhsm/libsofthsm2.so
         run: pnpm coverage
+
+  pilot:
+    name: acceptance rehearsal
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Pilot, 3 centres x 60 candidates (offline)
+        run: pnpm pilot --offline --candidates 60 --rederive 8
+
+  cups:
+    name: IPP against real CUPS
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install and configure CUPS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cups cups-pdf cups-filters
+          sudo mkdir -p /var/spool/cups-pdf-out
+          sudo chmod 1777 /var/spool/cups-pdf-out
+          # Write finished jobs somewhere predictable instead of an anonymous
+          # user home, so the test can inspect what actually printed.
+          sudo tee /etc/cups/cups-pdf.conf >/dev/null <<'CONF'
+          Out /var/spool/cups-pdf-out
+          AnonDirName /var/spool/cups-pdf-out
+          AnonUser nobody
+          Cleanup 0
+          CONF
+          sudo systemctl restart cups
+          # Wait for the scheduler rather than sleeping a fixed interval.
+          for _ in $(seq 1 60); do
+            lpstat -r >/dev/null 2>&1 && break
+            sleep 0.5
+          done
+          lpstat -r
+          sudo lpadmin -p zw-test -E -v cups-pdf:/ -m everywhere \
+            || sudo lpadmin -p zw-test -E -v cups-pdf:/ -m drv:///cupsfilters.drv/pwgrast.ppd
+          sudo cupsenable zw-test
+          sudo cupsaccept zw-test
+          lpstat -p zw-test
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Print real papers through CUPS
+        env:
+          ZW_CUPS_URL: http://127.0.0.1:631/printers/zw-test
+          ZW_CUPS_OUTPUT_DIR: /var/spool/cups-pdf-out
+          # Must RUN, not skip: a missing server fails the job.
+          ZW_REQUIRE_CUPS: "1"
+        run: pnpm --filter @zw/centre exec vitest run test/cups.test.ts
+
+      - name: CUPS error log on failure
+        if: failure()
+        run: sudo tail -100 /var/log/cups/error_log || true
+
+  deploy-artifacts:
+    name: deploy artifacts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate YAML
+        run: |
+          python3 - <<'PY'
+          import yaml
+          for f in [
+              "deploy/ansible/site.yml",
+              "deploy/ansible/inventory.example.yml",
+              "deploy/pilot/docker-compose.yml",
+              ".github/workflows/ci.yml",
+          ]:
+              list(yaml.safe_load_all(open(f)))
+              print(f"{f}: OK")
+          PY
+
+      - name: Shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck deploy/docker/entrypoint.sh \
+                     deploy/pilot/cups/start-cups.sh \
+                     deploy/pilot/run-pilot.sh
+
+      - name: Build the container image
+        run: docker build -f deploy/docker/Dockerfile -t zero-window:ci .
+
+  tsa-live:
+    name: live TSA anchoring
+    # Third-party services with no SLA: scheduled and manual only, so an
+    # outage at freetsa.org means this job needs attention rather than an
+    # unrelated pull request being blocked.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Anchor against FreeTSA and DigiCert
+        env:
+          ZW_TSA_MODE: live
+        run: pnpm --filter @zw/log test
+
+      - name: Full pilot with live anchoring
+        run: pnpm pilot --candidates 40 --rederive 6

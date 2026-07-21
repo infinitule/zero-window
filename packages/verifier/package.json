@@ -31,5 +31,6 @@
     "@zw/kms-vault": "workspace:*",
     "typescript": "^5.6.3",
     "vitest": "^2.1.9"
-  }
+  },
+  "license": "Apache-2.0"
 }
