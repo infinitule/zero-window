@@ -13,13 +13,21 @@
     "test": "pnpm -r --sort test",
     "lint": "pnpm -r --sort lint",
     "coverage": "pnpm -r --sort coverage",
-    "pilot": "bash deploy/pilot/run-pilot.sh",
+    "pilot": "node deploy/pilot/pilot.mjs",
     "clean": "pnpm -r exec rm -rf dist"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",
     "@vitest/coverage-v8": "^2.1.9",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.9"
+    "vitest": "^2.1.9",
+    "@zw/authority": "workspace:*",
+    "@zw/ca": "workspace:*",
+    "@zw/centre": "workspace:*",
+    "@zw/crypto": "workspace:*",
+    "@zw/kms-vault": "workspace:*",
+    "@zw/log": "workspace:*",
+    "@zw/verifier": "workspace:*",
+    "ipp": "^2.0.1"
   }
 }

@@ -1,0 +1,47 @@
+---
+# Example inventory for a three-centre pilot.
+#
+# Copy to inventory.yml and edit. Secrets (zw_vault_passphrase,
+# zw_vault_credential) belong in ansible-vault, not here:
+#
+#   ansible-vault encrypt_string --name zw_vault_passphrase 'the-passphrase'
+
+all:
+  vars:
+    zw_release_tarball: ../../dist/zero-window-1.0.0.tar.gz
+    zw_tls_dir: ../../pki-out          # output of `zw-ca issue`
+    zw_authority_host: authority.exams.internal
+    zw_authority_port: 8443
+    # From the ceremony minutes (runbooks/key-ceremony.md §0.1). Every centre
+    # verifies admit tokens and release media against this key, so a wrong
+    # value here fails closed at check-in rather than silently.
+    zw_authority_key: "REPLACE_WITH_AUTHORITY_PUBLIC_KEY_HEX"
+    zw_exam_id: EXAM-2026-PHYS
+    zw_backup_target: /media/backup/zero-window
+    # Encrypt with ansible-vault; never commit in plaintext.
+    zw_vault_passphrase: "REPLACE_ME"
+    zw_vault_credential: "REPLACE_WITH_systemd-creds_OUTPUT"
+
+  children:
+    zerowindow:
+      children:
+        authority:
+          hosts:
+            authority.exams.internal:
+        centres:
+          hosts:
+            centre-a.exams.internal:
+              zw_centre_id: CENTRE-A
+              zw_hardware_id: tpm-centre-a-001
+              # Primary first, then the failover target. The second printer
+              # should be on a different circuit and, ideally, a different
+              # switch — a shared failure domain defeats the point.
+              zw_printers: "hall-a=http://10.20.1.11:631/printers/hall-a,hall-a-backup=http://10.20.1.12:631/printers/hall-a-backup"
+            centre-b.exams.internal:
+              zw_centre_id: CENTRE-B
+              zw_hardware_id: tpm-centre-b-001
+              zw_printers: "hall-b=http://10.20.2.11:631/printers/hall-b,hall-b-backup=http://10.20.2.12:631/printers/hall-b-backup"
+            centre-c.exams.internal:
+              zw_centre_id: CENTRE-C
+              zw_hardware_id: tpm-centre-c-001
+              zw_printers: "hall-c=http://10.20.3.11:631/printers/hall-c,hall-c-backup=http://10.20.3.12:631/printers/hall-c-backup"

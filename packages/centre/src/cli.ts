@@ -65,6 +65,7 @@ COMMANDS
   receive-medium   Accept a signed offline release medium (T-0 fallback)
   check-in         Verify an admit token QR payload and bind the seat
   run-t0           Generate and print papers for all checked-in candidates
+  open-share       Open a sealed custodian share (custodian-side)
   status           Custody, check-ins and paper state
   close-exam       Log EXAM_CLOSED and discard keys
   checkpoint       Create a signed Merkle checkpoint of the centre log
@@ -136,6 +137,53 @@ async function main(argv: string[]): Promise<number> {
       try {
         const pub = await provider.ensureBoxKey("centre-box");
         process.stdout.write(`${pub.toString("hex")}\n`);
+        return 0;
+      } finally {
+        await provider.close();
+      }
+    }
+
+    case "open-share": {
+      // Custodian-side: prove this custodian can open the share sealed to
+      // them, and optionally write the opened share for submission at T-0.
+      const dir = resolve(opt(args, "dir") ?? "./custodian-state");
+      await mkdir(dir, { recursive: true });
+      const passphrase = opt(args, "passphrase") ?? process.env["ZW_VAULT_PASSPHRASE"];
+      const provider = await VaultKeyProvider.open({
+        keystorePath: join(dir, "keystore.json"),
+        ...(passphrase ? { passphrase: Buffer.from(passphrase, "utf8") } : {}),
+      });
+      try {
+        const envelope = JSON.parse(await readFile(req(args, "file"), "utf8")) as {
+          bundleId: string;
+          custodianId: string;
+          x: number;
+          sealedHex: string;
+        };
+        const blob = await provider.openSealedShare(
+          "centre-box",
+          Buffer.from(envelope.sealedHex, "hex"),
+        );
+        process.stdout.write(
+          `share opened successfully for ${envelope.custodianId}\n` +
+            `  bundle ${envelope.bundleId}\n  share index ${envelope.x}\n`,
+        );
+        const out = opt(args, "out");
+        if (out) {
+          await writeFile(
+            out,
+            JSON.stringify({
+              custodianId: envelope.custodianId,
+              shareHex: blob.toString("hex"),
+            }),
+          );
+          process.stdout.write(
+            `\nOpened share written to ${out}. This file IS share material:\n` +
+              `keep it on custodian-controlled media and carry it to the\n` +
+              `release ceremony. Do not copy it to a shared filesystem.\n`,
+          );
+        }
+        blob.fill(0);
         return 0;
       } finally {
         await provider.close();

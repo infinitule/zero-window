@@ -38,6 +38,24 @@ describe("redaction (I-OPS-1)", () => {
     expect(out["share_count"]).toBe(5);
   });
 
+  it("keeps release timing telemetry readable (runbooks depend on it)", () => {
+    // REGRESSION: these were redacted because the names contain "kek", which
+    // blinded the operator to the one measurement that says whether a host is
+    // fit for release duty.
+    const out = redact({
+      kek_lifetime_ms: 0.46,
+      kekLifetimeMs: 0.46,
+      kek_lifetime_us: 461,
+      kek_budget_ms: 500,
+    }) as Record<string, unknown>;
+    expect(out["kek_lifetime_ms"]).toBe(0.46);
+    expect(out["kekLifetimeMs"]).toBe(0.46);
+    expect(out["kek_lifetime_us"]).toBe(461);
+    expect(out["kek_budget_ms"]).toBe(500);
+    // The KEK itself is still redacted.
+    expect(redact({ kek: "raw" })["kek" as never]).toBe("[redacted]");
+  });
+
   it("never emits raw bytes for Buffers", () => {
     const secret = Buffer.alloc(32, 0xab);
     const out = redact({ blob: secret }) as Record<string, string>;

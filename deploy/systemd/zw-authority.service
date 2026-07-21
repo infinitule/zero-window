@@ -1,0 +1,57 @@
+[Unit]
+Description=ZERO-WINDOW authority (provisioning, ceremony, threshold release)
+Documentation=file:///opt/zero-window/runbooks/key-ceremony.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=zerowindow
+Group=zerowindow
+WorkingDirectory=/var/lib/zero-window/authority
+
+# The vault passphrase is delivered by systemd's credential store, so it is
+# never in the unit file, the environment of other processes, or `ps` output.
+# Populate with:  systemd-creds encrypt --name=zw-vault - /etc/zero-window/vault.cred
+LoadCredentialEncrypted=zw-vault:/etc/zero-window/vault.cred
+Environment=ZW_STATE_DIR=/var/lib/zero-window/authority
+Environment=ZW_LOG_LEVEL=info
+ExecStartPre=/bin/sh -c 'test -s "${CREDENTIALS_DIRECTORY}/zw-vault" || { echo "vault credential missing"; exit 1; }'
+ExecStart=/bin/sh -c 'ZW_VAULT_PASSPHRASE="$(cat "${CREDENTIALS_DIRECTORY}/zw-vault")" \
+  exec /usr/bin/node /opt/zero-window/authority/dist/daemon.js --dir "${ZW_STATE_DIR}"'
+
+# Graceful shutdown: the service drains in-flight requests and closes the log
+# cleanly. 20s is comfortably above the 15s internal shutdown deadline.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=5
+
+# Hardening. The authority holds the vault; it needs no network privileges
+# beyond its listener and no write access outside its state directory.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @obsolete
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/zero-window/authority
+
+# mlock: the key provider locks pages holding key material so they are never
+# paged to disk. Without this the KEK could survive on swap.
+LimitMEMLOCK=infinity
+
+[Install]
+WantedBy=multi-user.target

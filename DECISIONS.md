@@ -539,3 +539,62 @@ its own PKI, and pretending otherwise would invite an operator to generate
 "auditor" keys. v1.1 adds `--signing-key` to sign with an auditor-supplied
 key (ROADMAP). Meanwhile the canonical-JSON signature still catches any edit
 to a verdict or its evidence, which is what the report needs to survive.
+
+## D-40 — Failure drills are tests, not documentation
+
+**Decision.** Printer failover, cold-spare restore and offline release are
+executable tests (`packages/centre/test/drills.test.ts`) driving real
+components. Each runbook section names the drill that rehearses it.
+
+**Why.** Exam day cannot be re-run, so a fallback that has never been
+executed is a hypothesis. Making the drills tests means a change that breaks
+a documented recovery path fails CI rather than failing an examination. The
+restore drill in particular asserts something a prose runbook would gloss:
+the restored spare does NOT have the KEK (it was memory-only), so the runbook
+must include re-obtaining it — which it now does.
+
+## D-41 — The pilot's acceptance criterion is not "audit says PASS"
+
+**Decision.** The pilot rehearses an early-release attempt, and the auditor
+correctly reports T2 as ATTENTION. The acceptance criterion is that the only
+attention row is T2 and that its evidence is attributable solely to the
+rehearsed refusal, plus a positive check that the auditor *did* report it.
+
+**Why.** The first full pilot run failed on "audit overall verdict is PASS"
+— and the audit was right: an attempt to release a paper before T-0 must
+never be buried inside a PASS, even when refused. Weakening the auditor to
+make the pilot green would have destroyed the signal the system exists to
+produce. The pilot's expectation was wrong, so the pilot changed.
+
+## D-42 — Secrets reach services through systemd credentials, never units
+
+**Decision.** The vault passphrase is delivered via
+`LoadCredentialEncrypted=`, read from `$CREDENTIALS_DIRECTORY` at exec time.
+Unit files, environment files and Ansible inventories never contain it;
+`no_log: true` covers the Ansible tasks that touch it.
+
+**Why.** A passphrase in a unit file is readable by any user who can read
+`/etc/systemd/system`, appears in `systemctl show`, and leaks into
+configuration management history. systemd's credential store keeps it
+encrypted at rest, scoped to the service, and out of `ps`.
+
+## D-43 — Centre nodes restart always; the authority restarts on failure
+
+**Decision.** `zw-centre.service` sets `Restart=always` with
+`StartLimitIntervalSec=0`; `zw-authority.service` uses `Restart=on-failure`.
+
+**Why.** A centre node that crashes at T-0 must come back without waiting for
+an operator who may be supervising a hall, and a start-limit burst cap would
+stop it doing so at exactly the wrong moment. The authority is attended
+during its critical window and a crash-loop there should be visible rather
+than papered over.
+
+## D-44 — Printers must not share a failure domain
+
+**Decision.** Printers are an ordered list, and the inventory template
+documents that the backup should be on a different circuit and switch.
+
+**Why.** Automatic failover only helps if the second printer can survive what
+killed the first. A backup on the same power strip is decoration. This is a
+deployment property the code cannot enforce, so it is stated where the
+operator configures it.

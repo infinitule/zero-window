@@ -1,0 +1,266 @@
+---
+# ZERO-WINDOW multi-centre rollout.
+#
+#   ansible-playbook -i inventory.example.yml site.yml
+#
+# Idempotent: safe to re-run. It will NOT overwrite an existing keystore or
+# state database — a centre that already holds a bundle keeps it. To rebuild a
+# node from scratch, remove its state directory deliberately first.
+#
+# Ordering matters: the authority is configured before centres, because each
+# centre's client certificate is issued by the CA that lives with it.
+
+- name: Common host preparation
+  hosts: zerowindow
+  become: true
+  vars:
+    zw_user: zerowindow
+    zw_root: /var/lib/zero-window
+  tasks:
+    - name: Fail early on unsupported distributions
+      ansible.builtin.assert:
+        that: ansible_facts['os_family'] == 'Debian'
+        fail_msg: >-
+          This playbook targets Debian/Ubuntu. Adapt the package tasks for
+          other distributions; nothing else here is distribution-specific.
+
+    - name: Install runtime packages
+      ansible.builtin.apt:
+        name:
+          - nodejs
+          - libsodium23
+          - cups-client        # lp/lpstat for the print-room fallback
+          - rsync              # used by the backup job (runbooks/restore.md)
+        state: present
+        update_cache: true
+
+    - name: Verify Node is 20 or newer
+      ansible.builtin.command: node --version
+      register: zw_node_version
+      changed_when: false
+
+    - name: Assert Node major version
+      ansible.builtin.assert:
+        that: zw_node_version.stdout | regex_replace('^v([0-9]+).*$', '\\1') | int >= 20
+        fail_msg: "Node 20+ is required, found {{ zw_node_version.stdout }}"
+
+    - name: Create service account
+      ansible.builtin.user:
+        name: "{{ zw_user }}"
+        system: true
+        shell: /usr/sbin/nologin
+        home: "{{ zw_root }}"
+        create_home: false
+
+    - name: Create directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ zw_user }}"
+        group: "{{ zw_user }}"
+        mode: "0700"
+      loop:
+        - "{{ zw_root }}"
+        - /etc/zero-window
+        - /opt/zero-window
+
+    - name: Install the application bundle
+      ansible.builtin.unarchive:
+        src: "{{ zw_release_tarball }}"
+        dest: /opt/zero-window
+        owner: root
+        group: root
+        mode: "0755"
+      notify: restart zerowindow services
+
+    # The vault passphrase is delivered through systemd's encrypted credential
+    # store, so it never appears in a unit file, in the environment of another
+    # process, or in `ps` output.
+    - name: Install the encrypted vault credential
+      ansible.builtin.copy:
+        content: "{{ zw_vault_credential }}"
+        dest: /etc/zero-window/vault.cred
+        owner: root
+        group: root
+        mode: "0400"
+      no_log: true
+      notify: restart zerowindow services
+
+  handlers:
+    - name: restart zerowindow services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: restarted
+        daemon_reload: true
+      loop: "{{ zw_services | default([]) }}"
+      when: zw_services is defined
+
+
+- name: Authority
+  hosts: authority
+  become: true
+  vars:
+    zw_services: [zw-authority]
+  tasks:
+    - name: Install the authority unit
+      ansible.builtin.copy:
+        src: ../systemd/zw-authority.service
+        dest: /etc/systemd/system/zw-authority.service
+        mode: "0644"
+      notify: restart zerowindow services
+
+    - name: Create the authority state directory
+      ansible.builtin.file:
+        path: /var/lib/zero-window/authority
+        state: directory
+        owner: zerowindow
+        group: zerowindow
+        mode: "0700"
+
+    - name: Install TLS material
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "/var/lib/zero-window/authority/tls/{{ item.dest }}"
+        owner: zerowindow
+        group: zerowindow
+        mode: "0400"
+      loop:
+        - { src: "{{ zw_tls_dir }}/authority/chain.pem", dest: chain.pem }
+        - { src: "{{ zw_tls_dir }}/authority/key.pem", dest: key.pem }
+        - { src: "{{ zw_tls_dir }}/ca.pem", dest: ca.pem }
+      no_log: true
+      notify: restart zerowindow services
+
+    - name: Enable and start the authority
+      ansible.builtin.systemd:
+        name: zw-authority
+        enabled: true
+        state: started
+        daemon_reload: true
+
+  handlers:
+    - name: restart zerowindow services
+      ansible.builtin.systemd:
+        name: zw-authority
+        state: restarted
+        daemon_reload: true
+
+
+- name: Centres
+  hosts: centres
+  become: true
+  vars:
+    zw_services: [zw-centre]
+  tasks:
+    - name: Require the per-centre variables
+      ansible.builtin.assert:
+        that:
+          - zw_centre_id is defined
+          - zw_exam_id is defined
+          - zw_authority_key is defined
+          - zw_printers is defined
+        fail_msg: >-
+          Each centre needs zw_centre_id, zw_exam_id, zw_authority_key and
+          zw_printers set in the inventory. zw_authority_key must match the
+          value recorded in the ceremony minutes (runbooks/key-ceremony.md).
+
+    - name: Create centre directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: zerowindow
+        group: zerowindow
+        mode: "0700"
+      loop:
+        - /var/lib/zero-window/centre
+        - /var/lib/zero-window/centre/tls
+        - /var/spool/zero-window
+
+    - name: Install TLS material
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "/var/lib/zero-window/centre/tls/{{ item.dest }}"
+        owner: zerowindow
+        group: zerowindow
+        mode: "0400"
+      loop:
+        - { src: "{{ zw_tls_dir }}/{{ zw_centre_id }}/chain.pem", dest: chain.pem }
+        - { src: "{{ zw_tls_dir }}/{{ zw_centre_id }}/key.pem", dest: key.pem }
+        - { src: "{{ zw_tls_dir }}/ca.pem", dest: ca.pem }
+      no_log: true
+      notify: restart zerowindow services
+
+    - name: Write the centre environment file
+      ansible.builtin.copy:
+        dest: /etc/zero-window/centre.env
+        owner: root
+        group: zerowindow
+        mode: "0640"
+        content: |
+          # Managed by Ansible — edits will be overwritten.
+          ZW_CENTRE_ID={{ zw_centre_id }}
+          ZW_EXAM_ID={{ zw_exam_id }}
+          ZW_AUTHORITY_KEY={{ zw_authority_key }}
+          ZW_AUTHORITY_HOST={{ zw_authority_host }}
+          ZW_AUTHORITY_PORT={{ zw_authority_port | default(8443) }}
+          ZW_AUTHORITY_SERVERNAME={{ zw_authority_servername | default(zw_authority_host) }}
+          ZW_TLS_DIR=/var/lib/zero-window/centre/tls
+          ZW_SPOOL_DIR=/var/spool/zero-window
+          ZW_PRINTERS={{ zw_printers }}
+          ZW_SYNC_INTERVAL_MS={{ zw_sync_interval_ms | default(5000) }}
+          ZW_ADMIN_PORT={{ zw_admin_port | default(9464) }}
+          ZW_LOG_LEVEL={{ zw_log_level | default('info') }}
+      notify: restart zerowindow services
+
+    - name: Install the centre unit
+      ansible.builtin.copy:
+        src: ../systemd/zw-centre.service
+        dest: /etc/systemd/system/zw-centre.service
+        mode: "0644"
+      notify: restart zerowindow services
+
+    # runbooks/restore.md §5: the backup window bounds how many seats can be
+    # lost to a node failure. Five minutes during the exam is the default.
+    - name: Install the state backup job
+      ansible.builtin.cron:
+        name: zero-window centre state backup
+        minute: "*/5"
+        user: root
+        job: >-
+          rsync -a --delete /var/lib/zero-window/centre/
+          {{ zw_backup_target }}/{{ zw_centre_id }}/
+        state: "{{ 'present' if zw_backup_target is defined else 'absent' }}"
+
+    - name: Enable and start the centre node
+      ansible.builtin.systemd:
+        name: zw-centre
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Report the centre's box public key for enrolment
+      ansible.builtin.command:
+        cmd: >-
+          node /opt/zero-window/centre/dist/cli.js identity
+          --dir /var/lib/zero-window/centre
+      become_user: zerowindow
+      register: zw_centre_identity
+      changed_when: false
+      environment:
+        ZW_VAULT_PASSPHRASE: "{{ zw_vault_passphrase }}"
+      no_log: true
+
+    - name: Show the key the authority must enrol
+      ansible.builtin.debug:
+        msg: >-
+          Enrol on the authority:
+          zw-authority enrol-centre --id {{ zw_centre_id }}
+          --box-public-key {{ zw_centre_identity.stdout | trim }}
+          --hardware-id {{ zw_hardware_id }}
+
+  handlers:
+    - name: restart zerowindow services
+      ansible.builtin.systemd:
+        name: zw-centre
+        state: restarted
+        daemon_reload: true

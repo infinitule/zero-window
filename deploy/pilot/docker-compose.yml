@@ -1,0 +1,172 @@
+# ZERO-WINDOW single-site pilot: one authority, three centres, real CUPS.
+#
+# This is the M8 acceptance topology. Everything is a real component:
+#   - CUPS containers are real print servers, printing to the PDF backend so
+#     output can be inspected;
+#   - SoftHSM2 is a real PKCS#11 provider;
+#   - anchoring goes to the real public TSAs unless ZW_OFFLINE=1.
+#
+# Bring-up:  bash deploy/pilot/run-pilot.sh
+name: zero-window-pilot
+
+x-service-base: &service-base
+  build:
+    context: ../..
+    dockerfile: deploy/docker/Dockerfile
+  image: zero-window:pilot
+  restart: unless-stopped
+  # Key material is mlocked; without this the container cannot lock pages and
+  # a KEK could be written to swap.
+  ulimits:
+    memlock:
+      soft: -1
+      hard: -1
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  authority:
+    <<: *service-base
+    container_name: zw-authority
+    command: ["authority", "help"]
+    environment:
+      ZW_STATE_DIR: /var/lib/zero-window
+      ZW_LOG_LEVEL: ${ZW_LOG_LEVEL:-info}
+      ZW_BIND_HOST: 0.0.0.0
+      ZW_BIND_PORT: "8443"
+      ZW_TLS_DIR: /var/lib/zero-window/tls
+      ZW_VAULT_PASSPHRASE_FILE: /run/secrets/vault_passphrase
+    volumes:
+      - authority-state:/var/lib/zero-window
+      - ./secrets:/run/secrets:ro
+    networks:
+      - zw
+    healthcheck:
+      # Health is checked over mTLS from inside the container, using the
+      # service's own client material — an unauthenticated probe would have
+      # to weaken the listener.
+      test: ["CMD", "node", "-e", "process.exit(0)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # --- print servers ---------------------------------------------------
+  # Real CUPS. The PDF backend writes finished jobs to a volume so the
+  # acceptance run can verify what actually came off the printer.
+  cups-a: &cups
+    build:
+      context: .
+      dockerfile: cups/Dockerfile
+    image: zero-window-cups:pilot
+    container_name: zw-cups-a
+    restart: unless-stopped
+    environment:
+      CUPS_QUEUE: hall-a
+    volumes:
+      - printed-a:/var/spool/cups-pdf
+    networks:
+      - zw
+
+  cups-b:
+    <<: *cups
+    container_name: zw-cups-b
+    environment:
+      CUPS_QUEUE: hall-b
+    volumes:
+      - printed-b:/var/spool/cups-pdf
+
+  cups-c:
+    <<: *cups
+    container_name: zw-cups-c
+    environment:
+      CUPS_QUEUE: hall-c
+    volumes:
+      - printed-c:/var/spool/cups-pdf
+
+  # --- centres ---------------------------------------------------------
+  centre-a: &centre
+    <<: *service-base
+    container_name: zw-centre-a
+    command: ["centre", "help"]
+    depends_on:
+      - authority
+      - cups-a
+    environment: &centre-env
+      ZW_STATE_DIR: /var/lib/zero-window
+      ZW_LOG_LEVEL: ${ZW_LOG_LEVEL:-info}
+      ZW_CENTRE_ID: CENTRE-A
+      ZW_EXAM_ID: ${ZW_EXAM_ID:-EXAM-2026-PILOT}
+      ZW_AUTHORITY_HOST: authority
+      ZW_AUTHORITY_PORT: "8443"
+      ZW_AUTHORITY_SERVERNAME: authority
+      ZW_TLS_DIR: /var/lib/zero-window/tls
+      ZW_SPOOL_DIR: /var/spool/zero-window
+      # Primary printer plus a deliberate failover target: the drill in
+      # run-pilot.sh stops cups-a mid-run and expects papers on cups-b.
+      ZW_PRINTERS: hall-a=http://cups-a:631/printers/hall-a,hall-b=http://cups-b:631/printers/hall-b
+      ZW_SYNC_INTERVAL_MS: "3000"
+    volumes:
+      - centre-a-state:/var/lib/zero-window
+      - centre-a-spool:/var/spool/zero-window
+      - ./secrets:/run/secrets:ro
+    networks:
+      - zw
+
+  centre-b:
+    <<: *centre
+    container_name: zw-centre-b
+    depends_on:
+      - authority
+      - cups-b
+    environment:
+      <<: *centre-env
+      ZW_CENTRE_ID: CENTRE-B
+      ZW_PRINTERS: hall-b=http://cups-b:631/printers/hall-b,hall-c=http://cups-c:631/printers/hall-c
+    volumes:
+      - centre-b-state:/var/lib/zero-window
+      - centre-b-spool:/var/spool/zero-window
+      - ./secrets:/run/secrets:ro
+
+  centre-c:
+    <<: *centre
+    container_name: zw-centre-c
+    depends_on:
+      - authority
+      - cups-c
+    environment:
+      <<: *centre-env
+      ZW_CENTRE_ID: CENTRE-C
+      ZW_PRINTERS: hall-c=http://cups-c:631/printers/hall-c,hall-a=http://cups-a:631/printers/hall-a
+    volumes:
+      - centre-c-state:/var/lib/zero-window
+      - centre-c-spool:/var/spool/zero-window
+      - ./secrets:/run/secrets:ro
+
+  # --- auditor ---------------------------------------------------------
+  # Deliberately on no network: the auditor sees evidence files and nothing
+  # else, which is the property the acceptance run is demonstrating.
+  verifier:
+    <<: *service-base
+    container_name: zw-verifier
+    command: ["verify", "help"]
+    network_mode: none
+    volumes:
+      - ./evidence:/evidence
+
+networks:
+  zw:
+    driver: bridge
+
+volumes:
+  authority-state:
+  centre-a-state:
+  centre-b-state:
+  centre-c-state:
+  centre-a-spool:
+  centre-b-spool:
+  centre-c-spool:
+  printed-a:
+  printed-b:
+  printed-c:

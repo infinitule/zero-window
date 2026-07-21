@@ -30,6 +30,16 @@ const SAFE_KEYS = new Set([
   "signerPublicKey",
   "kek_fingerprint",
   "kekFingerprint",
+  // Timing and budget telemetry for the release path. These names contain
+  // "kek" but carry no key material, and the exam-day runbook tells an
+  // operator to read them — redacting them would blind the one measurement
+  // that says whether a host is fit for release duty.
+  "kek_lifetime_ms",
+  "kekLifetimeMs",
+  "kek_lifetime_us",
+  "kekLifetimeUs",
+  "kek_budget_ms",
+  "kekBudgetMs",
   "token_hash",
   "tokenHash",
   "share_count",

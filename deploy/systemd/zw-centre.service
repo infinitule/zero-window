@@ -1,0 +1,53 @@
+[Unit]
+Description=ZERO-WINDOW centre node (custody, check-in, T-0 generation and printing)
+Documentation=file:///opt/zero-window/runbooks/exam-day.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=zerowindow
+Group=zerowindow
+WorkingDirectory=/var/lib/zero-window/centre
+
+LoadCredentialEncrypted=zw-vault:/etc/zero-window/vault.cred
+EnvironmentFile=/etc/zero-window/centre.env
+Environment=ZW_STATE_DIR=/var/lib/zero-window/centre
+Environment=ZW_LOG_LEVEL=info
+ExecStartPre=/bin/sh -c 'test -s "${CREDENTIALS_DIRECTORY}/zw-vault" || { echo "vault credential missing"; exit 1; }'
+ExecStart=/bin/sh -c 'ZW_VAULT_PASSPHRASE="$(cat "${CREDENTIALS_DIRECTORY}/zw-vault")" \
+  exec /usr/bin/node /opt/zero-window/centre/dist/daemon.js --dir "${ZW_STATE_DIR}"'
+
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+# CRITICAL (T10): a centre node must come back on its own if it crashes
+# mid-exam. Restart always, with a short delay, and no start-limit burst cap
+# during the exam window — an operator is not necessarily watching.
+Restart=always
+RestartSec=3
+StartLimitIntervalSec=0
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @obsolete
+CapabilityBoundingSet=
+# The spool directory is the print-room fallback; papers land there when IPP
+# printers are unavailable.
+ReadWritePaths=/var/lib/zero-window/centre /var/spool/zero-window
+
+LimitMEMLOCK=infinity
+
+[Install]
+WantedBy=multi-user.target

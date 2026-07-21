@@ -5,3 +5,4 @@ export * from "./render.js";
 export * from "./print.js";
 export * from "./store.js";
 export * from "./centre.js";
+export * from "./sync.js";

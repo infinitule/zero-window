@@ -185,9 +185,14 @@ export async function audit(input: AuditInput): Promise<AuditReportBody> {
   }
   const earlyAttempts = entriesOf(input.authority, "EARLY_RELEASE_ATTEMPT");
   for (const e of earlyAttempts) {
+    // An EARLY_RELEASE_ATTEMPT entry exists only because the release service
+    // refused and recorded the attempt — the defence worked. It is still
+    // reported as ATTENTION: somebody tried, and that is exactly the signal
+    // an exam board must not have buried in a PASS.
     t2Evidence.push(
-      `EARLY_RELEASE_ATTEMPT on ${String(e.payload["bundle_id"])} ` +
-        `(${String(e.payload["early_by_ms"])}ms early, custodians: ${JSON.stringify(e.payload["custodian_ids"])})`,
+      `REFUSED early release attempt on ${String(e.payload["bundle_id"])} ` +
+        `(${String(e.payload["early_by_ms"])}ms before T-0, custodians: ` +
+        `${JSON.stringify(e.payload["custodian_ids"])}) — the schedule check held`,
     );
   }
   threats.push({

@@ -68,6 +68,7 @@ COMMANDS
   provision         Ingest an item bank, build+encrypt bundles, split the KEK
   distribute        Write a ciphertext bundle for a centre
   schedule          Sign and store the T-0 release schedule
+  export-share      Export a custodian's sealed share
   issue-admit       Issue Ed25519-signed admit tokens (QR payloads)
   release           Threshold release of a KEK (--offline for physical ceremony)
   verify-medium     Verify a signed offline release medium
@@ -195,6 +196,50 @@ async function main(argv: string[]): Promise<number> {
         process.stdout.write(
           `Distributed ${bundleId} to ${centreId}\n  bundle hash ${bundle.bundleHash}\n` +
             `The centre must verify this hash against the log before accepting.\n`,
+        );
+        return 0;
+      } finally {
+        await authority.close();
+      }
+    }
+
+    case "export-share": {
+      const authority = await openAuthority(args);
+      try {
+        const bundleId = req(args, "bundle");
+        const custodianId = req(args, "custodian");
+        const share = authority.store
+          .shares(bundleId)
+          .find((s) => s.custodianId === custodianId);
+        if (!share) {
+          throw new UsageError(
+            `no share for custodian ${custodianId} on bundle ${bundleId}`,
+          );
+        }
+        const custodian = authority.store.custodian(custodianId);
+        const out = opt(args, "out") ?? `share-${custodianId}.json`;
+        // The envelope is sealed to the custodian's public key: this file is
+        // useless to anyone else, and useless alone even to them (t-of-n).
+        await writeFile(
+          out,
+          JSON.stringify(
+            {
+              v: 1,
+              bundleId,
+              custodianId,
+              x: share.x,
+              sealedHex: share.sealed.toString("hex"),
+              boxPublicKey: custodian?.boxPublicKey ?? "",
+            },
+            null,
+            2,
+          ),
+        );
+        process.stdout.write(
+          `Exported sealed share for ${custodianId} to ${out}\n` +
+            `The custodian must verify they can open it before leaving the\n` +
+            `ceremony (zw-centre open-share). A share that cannot be opened is\n` +
+            `unrecoverable and the provisioning must be redone.\n`,
         );
         return 0;
       } finally {
